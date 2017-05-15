@@ -68,7 +68,7 @@ class TimeStream extends struct('generator') {
 	}
 
 	consumeWithTime(sink) {
-		const gen = iterableToIterator(this.generator)();
+		const gen = this[Symbol.iterator]();
 		const start = Date.now();
 
 		function loop() {
