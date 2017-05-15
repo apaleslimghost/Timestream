@@ -3,13 +3,14 @@ const {setHrTimeout} = require('@quarterto/hr-timeout');
 const subtractHrtime = require('@quarterto/subtract-hrtime');
 const msToHrtime = require('@quarterto/ms-to-hrtime');
 
-class Event extends struct('time', 'data') {
-	delay(amt) {
-		return new this.constructor(this.time + amt, this.data);
+const Event = struct('data');
+class Value extends Event {}
+class Interval extends Event {}
+class End extends Event {
+	constructor() {
+		super(null);
 	}
 }
-class Next extends Event {}
-class Stop extends Event {}
 
 const generatorToIterable = iter => typeof iter === 'function' ? iter() : iter;
 const iterableToIterator = iter => iter[Symbol.iterator] || iter;
@@ -17,7 +18,9 @@ const iterableToIterator = iter => iter[Symbol.iterator] || iter;
 class TimeStream extends struct('generator') {
 	static fromArray(arr) {
 		return new TimeStream(
-			arr.map((x, i) => new (i === arr.length - 1 ? Stop : Next)(...x))
+			arr.map(
+				x => x instanceof Event ? x : new Value(x)
+			).concat(new End())
 		);
 	}
 
@@ -29,24 +32,25 @@ class TimeStream extends struct('generator') {
 	}
 
 	delay(amt) {
-		return this.map(event => event.delay(amt));
+		return new TimeStream([
+			new Interval(amt)
+		]).concat(this);
+	}
+
+	endless() {
+		const self = this;
+		return new TimeStream(function* () {
+			for(const event of self) {
+				if(!(event instanceof End)) yield event;
+			}
+		});
 	}
 
 	concat(other) {
 		const self = this;
 		return new TimeStream(function* () {
-			let end;
-			yield* self.run(event => {
-				switch(event.constructor) {
-					case Next:
-						return event;
-					case Stop:
-						end = event.time;
-						return new Next(event);
-				}
-			});
-
-			yield* other.delay(end);
+			yield* self.endless();
+			yield* other;
 		});
 	}
 
@@ -57,32 +61,34 @@ class TimeStream extends struct('generator') {
 	*run(sink) {
 		for(const event of generatorToIterable(this.generator)) {
 			yield sink(event);
-			if(event instanceof Stop) return;
+			if(event instanceof End) return;
 		}
 	}
 
 	consume(sink) {
 		for(const event of this) {
-			sink(event);
+			sink(event.data);
 		}
 	}
 
 	consumeWithTime(sink) {
 		const gen = this[Symbol.iterator]();
-		const start = Date.now();
 
 		function loop() {
-			let {done, value: {time, data} = {}} = gen.next();
-
+			let {done, value} = gen.next();
 			if(done) return;
 
-			const sinceStart = Date.now() - start;
-			const delay = time - sinceStart;
-
-			setTimeout(() => {
-				sink(data);
-				loop();
-			}, delay);
+			switch(value.constructor) {
+				case Interval:
+					return setTimeout(() => {
+						loop();
+					}, value.data);
+				case Value:
+					sink(value.data);
+					return loop();
+				case End:
+					return;
+			}
 		}
 
 		loop();
@@ -90,19 +96,29 @@ class TimeStream extends struct('generator') {
 }
 
 const foo = TimeStream.fromArray([
-	[0,    'a'],
-	[1000, 'b'],
-	[2000, 'c'],
-	[3000, 'd'],
-	[4000, 'e'],
+	'a',
+	new Interval(1000),
+	'b',
+	new Interval(1000),
+	'c',
+	new Interval(1000),
+	'd',
+	new Interval(1000),
+	'e',
+	new Interval(1000),
 ]);
 
 const bar = TimeStream.fromArray([
-	[0,    'f'],
-	[1000, 'g'],
-	[2000, 'h'],
-	[3000, 'i'],
-	[4000, 'j'],
+	'f',
+	new Interval(1000),
+	'g',
+	new Interval(1000),
+	'h',
+	new Interval(1000),
+	'i',
+	new Interval(1000),
+	'j',
+	new Interval(1000),
 ]);
 
-foo.concat(bar.delay(1000)).consumeWithTime(console.log);
+foo.concat(bar).consumeWithTime(console.log);
