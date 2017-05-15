@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@quarterto/hr-timeout": "^1.3.0",
+    "@quarterto/ms-to-hrtime": "^1.0.0",
+    "@quarterto/struct": "^1.5.0",
+    "@quarterto/subtract-hrtime": "^1.0.0"
+  }
+}
