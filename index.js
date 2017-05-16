@@ -54,6 +54,121 @@ class TimeStream extends struct('generator') {
 		});
 	}
 
+	merge(other) {
+		const self = this;
+
+		return new TimeStream(function* () {
+			const selfGen = self[Symbol.iterator]();
+			const otherGen = other[Symbol.iterator]();
+
+			let iterateSelf = true;
+			let iterateOther = true;
+			let overrideSelf = false;
+			let overrideOther = false;
+
+			while(true) {
+				if(overrideSelf) {
+					iterateSelf = false;
+					selfEvent = overrideSelf;
+					overrideSelf = false;
+				}
+
+				if(overrideOther) {
+					iterateOther = false;
+					otherEvent = overrideOther;
+					overrideOther = false;
+				}
+
+				if(iterateSelf) {
+					var {done: selfDone, value: selfEvent} = selfGen.next();
+				}
+
+				if(iterateOther) {
+					var {done: otherDone, value: otherEvent} = otherGen.next();
+				}
+
+				if(selfDone) {
+					if(otherDone) break;
+
+					iterateSelf = false;
+					iterateOther = true;
+					continue;
+				}
+
+				if(otherDone) {
+					iterateSelf = true;
+					iterateOther = false;
+					continue;
+				}
+
+				switch(selfEvent.constructor) {
+					case Value:
+						yield selfEvent;
+
+						switch(otherEvent.constructor) {
+							case End:
+								iterateSelf = true;
+								iterateOther = false;
+								continue;
+							default:
+								yield otherEvent;
+								iterateSelf = iterateOther = true;
+								continue;
+
+						}
+
+					case Interval:
+						switch(otherEvent.constructor) {
+							case Value:
+								yield selfEvent;
+								yield otherEvent;
+								iterateSelf = iterateOther = true;
+								continue;
+							case Interval:
+								// same interval, so coalesce following event
+								if(selfEvent.data === otherEvent.data) {
+									yield selfEvent;
+									iterateSelf = iterateOther = true;
+									continue;
+								}
+
+								// we want the shortest interval, then iterate whatever
+								// comes next, with the other stream's head replaced
+								// with the remaining interval
+								if(selfEvent.data < otherEvent.data) {
+									yield selfEvent;
+									overrideOther = new Interval(otherEvent.data - selfEvent.data);
+									iterateSelf = true;
+									iterateOther = false;
+									continue;
+								}
+
+								if(otherEvent.data < selfEvent.data) {
+									yield otherEvent;
+									overrideSelf = new Interval(selfEvent.data - otherEvent.data);
+									iterateSelf = false;
+									iterateOther = true;
+									continue;
+								}
+							case End:
+								yield selfEvent;
+								iterateSelf = true;
+								iterateOther = false;
+								continue;
+						}
+
+					case End:
+						yield otherEvent;
+						iterateSelf = false;
+						iterateOther = true;
+
+						if(otherEvent instanceof End) break;
+						else continue;
+				}
+			}
+		});
+	}
+
 	[Symbol.iterator]() {
 		return this.run(e => e);
 	}
@@ -96,29 +211,33 @@ class TimeStream extends struct('generator') {
 }
 
 const foo = TimeStream.fromArray([
-	'a',
-	new Interval(1000),
-	'b',
-	new Interval(1000),
-	'c',
-	new Interval(1000),
-	'd',
-	new Interval(1000),
-	'e',
-	new Interval(1000),
+	'kick',
+	new Interval(500),
+	'kick',
+	new Interval(500),
+	'kick',
+	new Interval(500),
+	'kick',
+	new Interval(500),
 ]);
 
 const bar = TimeStream.fromArray([
-	'f',
-	new Interval(1000),
-	'g',
-	new Interval(1000),
-	'h',
-	new Interval(1000),
-	'i',
-	new Interval(1000),
-	'j',
-	new Interval(1000),
+	'snare',
+	new Interval(250),
+	'snare',
+	new Interval(250),
+	'snare',
+	new Interval(250),
+	'snare',
+	new Interval(250),
+	'snare',
+	new Interval(250),
+	'snare',
+	new Interval(250),
+	'snare',
+	new Interval(250),
+	'snare',
+	new Interval(250),
 ]);
 
-foo.concat(bar).consumeWithTime(console.log);
+foo.merge(bar).consumeWithTime(console.log);
