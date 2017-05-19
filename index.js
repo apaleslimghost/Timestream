@@ -3,13 +3,15 @@ const {setHrTimeout} = require('@quarterto/hr-timeout');
 const subtractHrtime = require('@quarterto/subtract-hrtime');
 const msToHrtime = require('@quarterto/ms-to-hrtime');
 
-const Event = struct('data', 'delay');
+const groupBy = require('lodash.groupby');
+
+class Event extends struct('data', 'delay') {}
 
 const generatorToIterable = iter => typeof iter === 'function' ? iter() : iter;
 const iterableToIterator = iter => iter[Symbol.iterator] || iter;
 
 const mergeCumulative = (a, b) => Array.from({length: a.length + b.length}, (_, i) => {
-	if(a[0] && a[0].delay <= b[0].delay) {
+	if(!b[0] || a[0] && a[0].delay <= b[0].delay) {
 		return a.shift();
 	}
 
@@ -26,13 +28,26 @@ class TimeStream extends struct('generator') {
 	}
 
 	static fromCumulative(events) {
-		let marker = 0;
 		return new TimeStream(function*() {
+			let marker = 0;
+
 			for(const {data, delay} of events) {
 				yield new Event(data, delay - marker);
 				marker = delay;
 			}
 		});
+	}
+
+	static fromCumulativeJoined(events) {
+		const grouped = groupBy(events, 'delay');
+		const collated = Object.keys(grouped).map(delay => {
+			const events = grouped[delay];
+			return new Event(
+				events.reduce((stuff, {data}) => stuff.concat(data), []),
+				delay
+			);
+		});
+		return this.fromCumulative(collated);
 	}
 
 	map(fn) {
@@ -70,6 +85,15 @@ class TimeStream extends struct('generator') {
 
 	merge(other) {
 		return TimeStream.fromCumulative(
+			mergeCumulative(
+				this.toCumulative(),
+				other.toCumulative()
+			)
+		);
+	}
+
+	mergeJoin(other) {
+		return TimeStream.fromCumulativeJoined(
 			mergeCumulative(
 				this.toCumulative(),
 				other.toCumulative()
@@ -117,22 +141,27 @@ class TimeStream extends struct('generator') {
 	}
 }
 
-const foo = TimeStream.fromArray([
-	['kick', 1000],
-	['kick', 1000],
-	['kick', 1000],
-	['kick', 1000],
+const kicks = TimeStream.fromArray([
+	['kick', 0],
+	['kick', 500],
+	['kick', 500],
+	['kick', 500],
 ]);
 
-const bar = TimeStream.fromArray([
+const snares = TimeStream.fromArray([
 	['snare', 500],
-	['snare', 500],
-	['snare', 500],
-	['snare', 500],
-	['snare', 500],
-	['snare', 500],
-	['snare', 500],
-	['snare', 500],
+	['snare', 1000],
 ]);
 
-foo.merge(bar).consumeWithTime(console.log.bind(console, '→'));
+const hats = TimeStream.fromArray([
+	['hat', 0],
+	['hat', 250],
+	['hat', 250],
+	['hat', 250],
+	['hat', 250],
+	['hat', 250],
+	['hat', 250],
+	['hat', 250],
+]);
+
+kicks.mergeJoin(snares).mergeJoin(hats).consumeWithTime(console.log.bind(console, '→'));
