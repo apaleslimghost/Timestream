@@ -66,6 +66,16 @@ class TimeStream extends struct('generator') {
 			yield* iter;
 		});
 	}
+
+	loop() {
+		const self = this;
+		return new TimeStream(function* () {
+			while(true) {
+				yield* self;
+			}
+		});
+	}
+
 	concat(other) {
 		const self = this;
 		return new TimeStream(function* () {
@@ -164,4 +174,4 @@ const hats = TimeStream.fromArray([
 	['hat', 250],
 ]);
 
-kicks.mergeJoin(snares).mergeJoin(hats).consumeWithTime(console.log.bind(console, '→'));
+kicks.mergeJoin(snares).mergeJoin(hats).loop().consumeWithTime(console.log.bind(console, '→'));
